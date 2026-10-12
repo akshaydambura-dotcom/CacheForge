@@ -8,7 +8,8 @@
 StorageEngine::StorageEngine(const std::string& db_path,
                              const std::string& index_path,
                              const std::string& wal_path)
-    : disk_manager(db_path), hash_index(index_path),buffer_pool(3,disk_manager),op_count_since_checkpoint(0){
+    : db_file_path(db_path), index_file_path(index_path), wal_file_path(wal_path),
+      disk_manager(db_path), hash_index(index_path), buffer_pool(3, disk_manager), op_count_since_checkpoint(0) {
     wal = new WAL(wal_path);
     wal->replay(*this); // replay incomplete operations on startup
 }
@@ -95,8 +96,8 @@ void StorageEngine::compact() {
     // Step 1 - get all valid keys and their values from index
     std::vector<std::pair<std::string, std::string>> live_data;
 
-    // read index.dat to get all live keys
-    std::ifstream index_file("data/index.dat");
+    // read index file to get all live keys
+    std::ifstream index_file(index_file_path);
     std::string key;
     int old_pid;
 
@@ -120,17 +121,16 @@ void StorageEngine::compact() {
 
     // Step 2 - delete old db and index files
     index_file.close();
-    // index_file.close();
     disk_manager.closeFile();
-    std::remove("data/cacheforge.db");
-    std::remove("data/index.dat");
-    std::remove("data/wal.log");
+    std::remove(db_file_path.c_str());
+    std::remove(index_file_path.c_str());
+    std::remove(wal_file_path.c_str());
 
     // Step 3 - reopen disk manager with fresh file
-    disk_manager = DiskManager("data/cacheforge.db");
-    hash_index   = HashIndex("data/index.dat");
+    disk_manager = DiskManager(db_file_path);
+    hash_index   = HashIndex(index_file_path);
     delete wal;
-    wal = new WAL("data/wal.log");
+    wal = new WAL(wal_file_path);
 
     // Step 4 - rewrite only live data
     for (auto& [k, v] : live_data) {

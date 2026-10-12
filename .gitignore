@@ -1,6 +1,32 @@
+# C++ Build & Binaries
 build/
-data/
 *.exe
 *.o
+*.obj
+*.dll
+*.so
+*.dylib
+
+# Database Storage Files & Logs
+data/
 *.db
 *.dat
+*.log
+
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Production Bundles
+dist/
+frontend/dist/
+
+# Environment Variables & Secrets (preserve .env.example)
+.env
+.env.local
+.env.*.local
+
+# OS Metadata
+.DS_Store
+Thumbs.db

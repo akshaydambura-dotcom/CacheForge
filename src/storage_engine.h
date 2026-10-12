@@ -8,6 +8,9 @@ class WAL; // forward declaration to avoid circular include
 
 class StorageEngine {
 private:
+    std::string  db_file_path;
+    std::string  index_file_path;
+    std::string  wal_file_path;
     DiskManager  disk_manager;
     HashIndex    hash_index;
     BufferPool   buffer_pool;
