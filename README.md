@@ -9,8 +9,8 @@
 [![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js)](https://nodejs.org)
 
 **Repository:** [https://github.com/akshaydambura-dotcom/CacheForge](https://github.com/akshaydambura-dotcom/CacheForge)<br />
-**Maintainer:** [Akshay Dambura](https://github.com/akshaydambura-dotcom)<br />
-**Original Author:** [Sai Yashaswith Gunda](https://github.com/saiyashaswithgunda-code/CacheForge)
+
+
 
 ---
 
