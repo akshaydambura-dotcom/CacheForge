@@ -1,36 +1,60 @@
 # CacheForge Deployment Guide
 
-This guide outlines deployment procedures for both the CacheForge React frontend and the C++ engine backend adapter.
+This guide outlines end-to-end production deployment for CacheForge on **Render**, including the C++ storage engine backend and the React/Vite developer web interface.
+
+**Repository:** [https://github.com/akshaydambura-dotcom/CacheForge](https://github.com/akshaydambura-dotcom/CacheForge)
 
 ---
 
-## 1. Architecture Split
+## 1. Production Architecture Overview
 
-| Component | Technology | Recommended Host | Persistence Requirement |
+| Component | Technology | Render Host Type | Persistence Requirement |
 | :--- | :--- | :--- | :--- |
-| **Frontend** | React 18, Vite SPA | **Vercel** / **Netlify** / **Cloudflare Pages** | None (Static Edge CDN) |
-| **Backend** | Docker, C++17, Express | **Render** / **Fly.io** / **Railway** | Persistent Disk Mount (`/data/cacheforge`) |
+| **Backend** | Docker, C++17, Node.js/Express | **Render Web Service** (Docker) | Persistent Disk (`/data`) on Starter+ plan, or ephemeral container storage on Free plan |
+| **Frontend** | React 18, Vite SPA | **Render Static Site** | None (Global Edge CDN with SPA rewrites) |
 
 ---
 
-## 2. Deploying the Backend (Render / Docker)
+## 2. Option A: Automated Deployment via Render Blueprint (`render.yaml`)
 
-Because CacheForge contains a compiled C++17 engine that persists data to disk files (`*.db`, `*.dat`, `*.log`), the backend must run on a platform that supports Docker containers and persistent disk storage.
+The repository includes a ready-to-use [`render.yaml`](../render.yaml) blueprint specification that declares both the backend Docker Web Service and frontend Static Site.
 
-### Option A: Render (Web Service + Persistent Disk)
-1. Fork or push the CacheForge repository to your GitHub account:
-   `https://github.com/akshaydambura-dotcom/CacheForge`
-2. Create a new **Web Service** on [Render](https://render.com).
-3. Connect your GitHub repository.
-4. Set the following build options:
-   - **Environment:** Docker
+1. Navigate to the [Render Dashboard](https://dashboard.render.com).
+2. Click **New +** $\rightarrow$ **Blueprint**.
+3. Connect your GitHub repository: `https://github.com/akshaydambura-dotcom/CacheForge`.
+4. Render detects `render.yaml` and provisions:
+   - `cacheforge-backend` (Docker container with compiled C++17 binary & Express REST API).
+   - `cacheforge-frontend` (Static Site with SPA rewrite rules and automatic backend connection).
+5. Click **Apply**. Render will deploy both services in sequence.
+
+---
+
+## 3. Option B: Manual Deployment via Render Dashboard
+
+If configuring services individually via the Render UI:
+
+### Step 1: Deploy the Backend (Render Web Service)
+
+1. Open [Render Dashboard](https://dashboard.render.com) and click **New +** $\rightarrow$ **Web Service**.
+2. Select **Build and deploy from a Git repository** and pick `akshaydambura-dotcom/CacheForge`.
+3. Configure service settings:
+   - **Name:** `cacheforge-backend`
+   - **Region:** Pick the region closest to you (e.g. Oregon, Frankfurt, Singapore).
+   - **Branch:** `main`
+   - **Root Directory:** Leave blank (defaults to repository root `.`).
+   - **Runtime:** `Docker`
    - **Dockerfile Path:** `backend/Dockerfile`
-   - **Context:** `.` (root of the repository)
-5. Under **Disks**, add a Persistent Disk:
-   - **Name:** `cacheforge-data`
-   - **Mount Path:** `/data/cacheforge`
-   - **Size:** 1 GB (or as needed)
-6. Under **Environment Variables**, configure:
+   - **Docker Build Context:** `.` (root of repository, required because `CMakeLists.txt` and `src/` reside in the root).
+4. **Plan Selection & Storage Persistence:**
+   - **Free Plan:** Supported. Container storage is ephemeral (data resets when the container sleeps after 15 minutes of inactivity or upon restarts).
+   - **Starter Plan ($7/mo):** Supports persistent disks. Under **Disks**, click **Add Persistent Disk**:
+     - **Name:** `cacheforge-data`
+     - **Mount Path:** `/data`
+     - **Size:** `1 GB` (minimum)
+5. **Health Check Path:**
+   - Expand **Advanced** $\rightarrow$ **Health Check Path**: `/api/health`
+6. **Environment Variables:**
+   Under **Environment Variables**, add:
    ```env
    NODE_ENV=production
    PORT=8080
@@ -38,86 +62,85 @@ Because CacheForge contains a compiled C++17 engine that persists data to disk f
    CACHEFORGE_DATA_DIR=/data/cacheforge
    CORS_ORIGIN=*
    ```
-7. Click **Create Web Service**. Render will:
-   - Build the C++ engine via `cmake` and `g++`.
-   - Install backend dependencies.
-   - Start the Express server on port 8080.
-8. Copy your backend service URL: `https://cacheforge-backend.onrender.com`.
-
-### Option B: Docker Compose (Self-Hosted / VPS)
-To deploy on any Linux VPS (Ubuntu, Debian, AWS EC2, DigitalOcean):
-```bash
-git clone https://github.com/akshaydambura-dotcom/CacheForge.git
-cd CacheForge
-
-# Start all containers in detached mode
-docker compose up -d --build
-
-# Verify running services
-docker compose ps
-docker compose logs -f
-```
+   *(You can restrict `CORS_ORIGIN` to your deployed frontend URL after creating the frontend).*
+7. Click **Create Web Service**.
+8. Wait for the Docker build to complete. Render compiles the C++17 engine and boots Express on port 8080.
+9. Verify the backend URL:
+   - `https://<your-backend-name>.onrender.com/api/health`
+   - Output should return `{"status":"ok","engineAvailable":true,...}`.
 
 ---
 
-## 3. Deploying the Frontend (Vercel / Netlify)
+### Step 2: Deploy the Frontend (Render Static Site)
 
-### Option A: Vercel
-1. Log in to [Vercel](https://vercel.com) and click **Add New Project**.
-2. Select your repository.
-3. Configure the Project:
+1. Return to the [Render Dashboard](https://dashboard.render.com) and click **New +** $\rightarrow$ **Static Site**.
+2. Connect `akshaydambura-dotcom/CacheForge`.
+3. Configure the static site:
+   - **Name:** `cacheforge-frontend`
+   - **Branch:** `main`
    - **Root Directory:** `frontend`
-   - **Framework Preset:** Vite
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-4. In **Environment Variables**, add:
+   - **Build Command:** `npm ci && npm run build`
+   - **Publish Directory:** `dist`
+4. **Environment Variables:**
+   Add:
    ```env
-   VITE_API_BASE_URL=https://cacheforge-backend.onrender.com
+   VITE_API_BASE_URL=https://<your-backend-name>.onrender.com
    ```
-   *(Replace with your live Render backend URL)*
-5. Click **Deploy**.
-
-### Option B: Netlify
-1. Log in to [Netlify](https://netlify.com) and click **Add new site** > **Import an existing project**.
-2. Select your GitHub repository.
-3. Configure Build Settings:
-   - **Base directory:** `frontend`
-   - **Build command:** `npm run build`
-   - **Publish directory:** `frontend/dist`
-4. Under **Site configuration** > **Environment variables**, add:
-   ```env
-   VITE_API_BASE_URL=https://cacheforge-backend.onrender.com
-   ```
-5. Click **Deploy Site**.
+   *(Use your live backend URL from Step 1, without a trailing slash).*
+5. **SPA Rewrites (Crucial for React Router Navigation):**
+   Under **Redirects / Rewrites**, click **Add Rule**:
+   - **Type:** `Rewrite`
+   - **Source:** `/*`
+   - **Destination:** `/index.html`
+   *(This ensures direct navigation and refreshing on `/playground`, `/architecture`, `/docs`, and `/status` load properly without 404s).*
+6. Click **Create Static Site**.
+7. Render will install packages, build the Vite production bundle, and publish the static site on global Edge CDN.
 
 ---
 
-## 4. Local Development
+## 4. Verification Checklist
 
-To run the complete stack locally:
+After deploying both services, run these checks:
 
-### Step 1: Build C++ Storage Engine
+1. **Backend Health Check:**
+   Visit `https://<backend-url>/api/health`.
+   - Verify `status: "ok"` and `engineAvailable: true`.
+2. **Backend Telemetry:**
+   Visit `https://<backend-url>/api/info` and `https://<backend-url>/api/stats`.
+3. **Frontend Connection:**
+   Visit `https://<frontend-url>/playground`.
+   - The status pill should display `Connected: Real C++ Engine` (Emerald green).
+   - If the backend is spinning up or offline, a clear error banner appears: `BACKEND CONNECTION ERROR — C++ Storage Engine Unreachable` (not silent simulation).
+4. **CRUD Execution:**
+   - Execute `SET user:101 "Arjun Sharma"`.
+   - Execute `GET user:101` $\rightarrow$ returns `"Arjun Sharma"`.
+   - Execute `DELETE user:101` $\rightarrow$ removes key.
+   - Run `BENCH` $\rightarrow$ evaluates 1,000 operations with live throughput.
+5. **SPA Route Navigation:**
+   - Visit `https://<frontend-url>/status`, `https://<frontend-url>/architecture`, and `https://<frontend-url>/docs`.
+   - Press browser Refresh (`F5`) on each route; verify it reloads cleanly without 404 errors.
+
+---
+
+## 5. Local Development Reference
+
+To run the complete full-stack environment locally:
+
 ```bash
-mkdir build
-cd build
-cmake .. -G "MinGW Makefiles"   # On Windows
-# or: cmake ..                  # On Linux / macOS
+# 1. Build C++ engine
+mkdir build && cd build
+cmake .. -G "MinGW Makefiles"   # or: cmake ..
 cmake --build .
 cd ..
-```
 
-### Step 2: Start Backend API Adapter
-```bash
+# 2. Run Backend adapter
 cd backend
 npm install
 node server.js
-```
-The backend starts listening on `http://localhost:8080`.
 
-### Step 3: Start Frontend Dev Server
-```bash
-cd ../frontend
+# 3. Run Frontend UI (in separate terminal)
+cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:3000` in your browser. Vite automatically proxies `/api` requests to `http://localhost:8080`.
+Open `http://localhost:3000` in your browser.

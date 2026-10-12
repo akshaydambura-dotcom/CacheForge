@@ -1,7 +1,9 @@
 import axios from 'axios';
 
 // Resolve base URL from environment or fallback to current origin / proxy
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const rawBase = (import.meta.env.VITE_API_BASE_URL || '').trim();
+// Strip trailing slash if present to avoid '//api/...' malformed endpoints
+const API_BASE = rawBase.replace(/\/+$/, '');
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -12,6 +14,11 @@ const client = axios.create({
 });
 
 export const api = {
+  // Return resolved base URL
+  getBaseUrl() {
+    return API_BASE || (typeof window !== 'undefined' ? window.location.origin : '');
+  },
+
   // Check backend health
   async getHealth() {
     try {

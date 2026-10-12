@@ -264,22 +264,29 @@ docker compose up -d --build
 
 ## Render Deployment Instructions
 
-Because CacheForge contains a compiled C++17 engine that manages binary disk files (`*.db`, `*.dat`, `*.log`), the backend must run as a containerized web service with persistent storage.
+CacheForge can be deployed seamlessly on **Render** using either the automated Blueprint or manual dashboard setup:
 
-### 1. Backend on Render (Web Service + Persistent Disk)
-1. Push your repository to GitHub: `https://github.com/akshaydambura-dotcom/CacheForge`.
-2. Go to [Render Dashboard](https://dashboard.render.com) and click **New +** $\rightarrow$ **Web Service**.
-3. Connect your repository (`akshaydambura-dotcom/CacheForge`).
-4. Configure the service settings:
+### Option A: Automated via Render Blueprint (`render.yaml`)
+1. Go to [Render Dashboard](https://dashboard.render.com) and click **New +** $\rightarrow$ **Blueprint**.
+2. Connect `https://github.com/akshaydambura-dotcom/CacheForge`.
+3. Render automatically provisions the Docker Web Service for the backend and the Static Site for the frontend using [`render.yaml`](render.yaml).
+4. Click **Apply**.
+
+### Option B: Manual Setup via Dashboard
+
+#### 1. Backend Web Service (Docker)
+1. In Render Dashboard, click **New +** $\rightarrow$ **Web Service**.
+2. Connect `akshaydambura-dotcom/CacheForge`.
+3. Set settings:
    - **Name:** `cacheforge-backend`
-   - **Language / Environment:** `Docker`
+   - **Runtime:** `Docker`
    - **Dockerfile Path:** `backend/Dockerfile`
    - **Docker Context Directory:** `.` (root directory)
-5. Under **Disks**, click **Add Persistent Disk**:
-   - **Name:** `cacheforge-data`
-   - **Mount Path:** `/data/cacheforge`
-   - **Size:** `1 GB` (or desired capacity)
-6. Under **Environment Variables**, add:
+   - **Health Check Path:** `/api/health`
+4. Storage:
+   - **Free Plan:** Uses container filesystem (ephemeral storage).
+   - **Starter Plan ($7/mo):** Attach a persistent disk at mount path `/data` (1 GB).
+5. Environment Variables:
    ```env
    NODE_ENV=production
    PORT=8080
@@ -287,18 +294,26 @@ Because CacheForge contains a compiled C++17 engine that manages binary disk fil
    CACHEFORGE_DATA_DIR=/data/cacheforge
    CORS_ORIGIN=*
    ```
-7. Click **Create Web Service**. Render builds the C++ engine via `cmake` inside the container and boots the Express server.
-8. Note your public backend URL (e.g. `https://cacheforge-backend.onrender.com`).
+6. Click **Create Web Service**. Note your backend URL (e.g., `https://cacheforge-backend.onrender.com`).
 
-### 2. Frontend on Vercel / Netlify
-1. Import `akshaydambura-dotcom/CacheForge` on [Vercel](https://vercel.com) or [Netlify](https://netlify.com).
-2. Set **Root Directory** to `frontend`.
-3. Set **Framework Preset** to `Vite`.
-4. Add the environment variable:
+#### 2. Frontend Static Site
+1. In Render Dashboard, click **New +** $\rightarrow$ **Static Site**.
+2. Connect `akshaydambura-dotcom/CacheForge`.
+3. Set settings:
+   - **Name:** `cacheforge-frontend`
+   - **Root Directory:** `frontend`
+   - **Build Command:** `npm ci && npm run build`
+   - **Publish Directory:** `dist`
+4. Environment Variables:
    ```env
    VITE_API_BASE_URL=https://cacheforge-backend.onrender.com
    ```
-5. Deploy the application.
+5. **SPA Rewrites (Required for client routing):**
+   Under **Redirects / Rewrites**, add:
+   - **Type:** `Rewrite`
+   - **Source:** `/*`
+   - **Destination:** `/index.html`
+6. Click **Create Static Site**.
 
 ---
 

@@ -6,22 +6,52 @@ const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+
+// Parse and validate port
+const rawPort = process.env.PORT;
+const PORT = rawPort && !isNaN(parseInt(rawPort, 10)) ? parseInt(rawPort, 10) : 8080;
 
 // Resolve binary and data directory paths
 const DEFAULT_BIN_WIN = path.resolve(__dirname, '../build/cacheforge.exe');
 const DEFAULT_BIN_UNIX = path.resolve(__dirname, '../build/cacheforge');
-const BIN_PATH = process.env.CACHEFORGE_BIN || (process.platform === 'win32' ? DEFAULT_BIN_WIN : DEFAULT_BIN_UNIX);
-const DATA_DIR = process.env.CACHEFORGE_DATA_DIR || path.resolve(__dirname, '../data');
+const BIN_PATH = process.env.CACHEFORGE_BIN
+  ? path.resolve(process.env.CACHEFORGE_BIN)
+  : (process.platform === 'win32' ? DEFAULT_BIN_WIN : DEFAULT_BIN_UNIX);
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Resolve data directory: prioritize CACHEFORGE_DATA_DIR, then /data mount point if present, then ../data
+const rawDataDir = process.env.CACHEFORGE_DATA_DIR;
+let DATA_DIR;
+if (rawDataDir && rawDataDir.trim().length > 0) {
+  DATA_DIR = path.resolve(rawDataDir);
+} else if (fs.existsSync('/data')) {
+  DATA_DIR = '/data/cacheforge';
+} else {
+  DATA_DIR = path.resolve(__dirname, '../data');
 }
 
-// Security & Middleware
+// Ensure data directory exists
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error(`[CRITICAL] Failed to create data directory at ${DATA_DIR}:`, err.message);
+}
+
+// Security & Middleware (flexible CORS supporting *, single domain, or comma-separated list)
+const corsOriginEnv = (process.env.CORS_ORIGIN || '*').trim();
+const allowedOrigins = corsOriginEnv.includes(',')
+  ? corsOriginEnv.split(',').map(s => s.trim().toLowerCase())
+  : [corsOriginEnv.toLowerCase()];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    if (!origin || corsOriginEnv === '*' || allowedOrigins.includes('*') || allowedOrigins.includes(origin.toLowerCase())) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -96,6 +126,7 @@ function runEngine(args, timeoutMs = 15000) {
 app.get('/api/health', (req, res) => {
   const binaryExists = checkBinaryExists();
   const dataDirExists = fs.existsSync(DATA_DIR);
+  const isDiskMounted = DATA_DIR.startsWith('/data') && fs.existsSync('/data');
 
   res.json({
     status: binaryExists ? 'ok' : 'degraded',
@@ -103,6 +134,7 @@ app.get('/api/health', (req, res) => {
     binaryPath: BIN_PATH,
     dataDir: DATA_DIR,
     dataDirExists,
+    isPersistentDisk: isDiskMounted,
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
   });
@@ -333,14 +365,23 @@ app.post('/api/command', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server on 0.0.0.0 for containerized / Render environments
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
-  console.log(`CacheForge Backend Adapter listening on port ${PORT}`);
+  console.log(`CacheForge Backend Adapter listening on 0.0.0.0:${PORT}`);
   console.log(`Engine binary: ${BIN_PATH}`);
   console.log(`Binary exists: ${checkBinaryExists()}`);
   console.log(`Data directory: ${DATA_DIR}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`===============================================`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server gracefully');
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
 });
 
 module.exports = app;

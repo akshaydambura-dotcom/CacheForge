@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Terminal, Play, Trash2, Search, PlusCircle, RefreshCw, Zap,
-  CheckCircle2, AlertTriangle, Clock, HardDrive, ShieldCheck, Database,
+  CheckCircle2, AlertTriangle, AlertCircle, Clock, HardDrive, ShieldCheck, Database,
   ArrowRight, Info
 } from 'lucide-react';
 import { api } from '../services/api';
@@ -13,6 +13,7 @@ export default function PlaygroundPage() {
   
   const [loading, setLoading] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
   
   const [simStore, setSimStore] = useState({ 'demo:greeting': 'Hello from CacheForge!' });
@@ -26,8 +27,14 @@ export default function PlaygroundPage() {
     const isConn = health.connected && health.data?.engineAvailable;
     setBackendConnected(isConn);
     if (!isConn) {
-      setDemoMode(true);
+      const errMsg = health.error
+        ? `API error: ${health.error}`
+        : (!health.connected
+          ? `Backend unreachable at ${api.getBaseUrl()}`
+          : 'C++ storage engine binary is not running on the backend');
+      setConnectionError(errMsg);
     } else {
+      setConnectionError(null);
       setDemoMode(false);
       loadStats();
     }
@@ -53,13 +60,16 @@ export default function PlaygroundPage() {
     setCurrentResult(null);
 
     let res;
-    if (backendConnected && !demoMode) {
-      // Execute against real C++ storage engine binary
-      res = await api.executeCommand(op, k, v);
-    } else {
-      // Browser-only simulation fallback strictly labeled
+    if (demoMode) {
+      // Browser-only simulation fallback if user explicitly toggled demo mode
       res = api.simulateCommand(simStore, op, k, v);
       setSimStore({ ...simStore });
+    } else {
+      // Execute against real C++ storage engine binary
+      res = await api.executeCommand(op, k, v);
+      if (!res.success && !backendConnected) {
+        res.error = res.error || `Connection Error: Unable to reach C++ backend at ${api.getBaseUrl()}. Check backend service status.`;
+      }
     }
 
     setLoading(false);
@@ -119,8 +129,12 @@ export default function PlaygroundPage() {
           <div style={{
             padding: '1rem 1.25rem',
             borderRadius: '12px',
-            backgroundColor: backendConnected && !demoMode ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-            border: `1px solid ${backendConnected && !demoMode ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+            backgroundColor: backendConnected && !demoMode
+              ? 'rgba(16, 185, 129, 0.1)'
+              : (demoMode ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
+            border: `1px solid ${backendConnected && !demoMode
+              ? 'rgba(16, 185, 129, 0.3)'
+              : (demoMode ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)')}`,
             display: 'flex',
             flexDirection: 'column',
             gap: '0.5rem'
@@ -130,17 +144,19 @@ export default function PlaygroundPage() {
                 width: '10px',
                 height: '10px',
                 borderRadius: '50%',
-                backgroundColor: backendConnected && !demoMode ? '#10b981' : '#f59e0b',
-                boxShadow: backendConnected && !demoMode ? '0 0 10px #10b981' : '0 0 10px #f59e0b'
+                backgroundColor: backendConnected && !demoMode ? '#10b981' : (demoMode ? '#f59e0b' : '#ef4444'),
+                boxShadow: backendConnected && !demoMode ? '0 0 10px #10b981' : (demoMode ? '0 0 10px #f59e0b' : '0 0 10px #ef4444')
               }} />
               <strong style={{ color: '#ffffff', fontSize: '0.9rem' }}>
-                {backendConnected && !demoMode ? 'Connected: Real C++ Engine' : 'Offline: Browser Demo Mode'}
+                {backendConnected && !demoMode
+                  ? 'Connected: Real C++ Engine'
+                  : (demoMode ? 'Offline: Browser Demo Mode' : 'Backend Disconnected')}
               </strong>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <button 
-                onClick={checkStatus} 
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={checkStatus}
                 className="btn btn-secondary" 
                 style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
                 title="Refresh backend status"
@@ -158,12 +174,61 @@ export default function PlaygroundPage() {
                   {demoMode ? 'Switch to Real C++ Engine' : 'Switch to Demo Mode'}
                 </button>
               )}
+
+              {!backendConnected && !demoMode && (
+                <button
+                  onClick={() => setDemoMode(true)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.65rem', color: '#fbbf24' }}
+                >
+                  Use Offline Demo Mode
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {/* DEMO MODE WARNING BANNER */}
-        {(!backendConnected || demoMode) && (
+        {/* BACKEND CONNECTION ERROR BANNER */}
+        {!backendConnected && !demoMode && (
+          <div style={{
+            padding: '1.25rem 1.5rem',
+            borderRadius: '10px',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            marginBottom: '2rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
+              <AlertCircle size={24} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <strong style={{ color: '#f87171', fontSize: '0.95rem', display: 'block' }}>
+                  BACKEND CONNECTION ERROR — C++ Storage Engine Unreachable
+                </strong>
+                <span style={{ color: '#cbd5e1', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
+                  Cannot connect to the backend API at <code style={{ color: '#38bdf8' }}>{api.getBaseUrl()}</code>.
+                  {connectionError && <span style={{ color: '#fca5a5' }}> ({connectionError})</span>}
+                </span>
+                <span style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                  Verify that the backend service is running, listening on PORT, and has CORS enabled.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setDemoMode(true)}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem', whiteSpace: 'nowrap' }}
+            >
+              Run in Browser Demo Mode
+            </button>
+          </div>
+        )}
+
+        {/* DEMO MODE WARNING BANNER (When manually toggled on) */}
+        {demoMode && (
           <div style={{
             padding: '1rem 1.25rem',
             borderRadius: '10px',
@@ -172,17 +237,28 @@ export default function PlaygroundPage() {
             marginBottom: '2rem',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
             gap: '0.85rem'
           }}>
-            <AlertTriangle size={22} color="#f59e0b" style={{ flexShrink: 0 }} />
-            <div>
-              <strong style={{ color: '#fbbf24', fontSize: '0.92rem', display: 'block' }}>
-                DEMO MODE — Browser-only simulation; not connected to the C++ engine.
-              </strong>
-              <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
-                The backend adapter is currently unreachable or set to demo mode. Operations will simulate in-memory without persistent binary disk writes until the backend is running.
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <AlertTriangle size={22} color="#f59e0b" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ color: '#fbbf24', fontSize: '0.92rem', display: 'block' }}>
+                  DEMO MODE ACTIVE — Local In-Memory Simulation
+                </strong>
+                <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                  Commands are running in browser memory and are not persisted to the C++ binary disk.
+                </span>
+              </div>
             </div>
+            <button
+              onClick={() => { setDemoMode(false); checkStatus(); }}
+              className="btn btn-primary"
+              style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', whiteSpace: 'nowrap' }}
+            >
+              Switch to Live C++ Engine
+            </button>
           </div>
         )}
 
