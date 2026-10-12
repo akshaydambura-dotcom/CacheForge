@@ -23,19 +23,21 @@ services:
 
   # ============================================================
   # CacheForge Frontend (React 18 / Vite Developer Web UI)
+  # Render Blueprint static sites require type: web and runtime: static
   # ============================================================
-  - type: static
+  - type: web
     name: cacheforge-frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    runtime: static
     rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
         fromService:
           type: web
           name: cacheforge-backend
           property: host
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html

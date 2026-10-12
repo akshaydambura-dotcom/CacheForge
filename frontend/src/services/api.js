@@ -2,8 +2,11 @@ import axios from 'axios';
 
 // Resolve base URL from environment or fallback to current origin / proxy
 const rawBase = (import.meta.env.VITE_API_BASE_URL || '').trim();
-// Strip trailing slash if present to avoid '//api/...' malformed endpoints
-const API_BASE = rawBase.replace(/\/+$/, '');
+let cleanBase = rawBase.replace(/\/+$/, '');
+if (cleanBase && !cleanBase.startsWith('http://') && !cleanBase.startsWith('https://') && !cleanBase.startsWith('/')) {
+  cleanBase = cleanBase.includes('.') ? `https://${cleanBase}` : `https://${cleanBase}.onrender.com`;
+}
+const API_BASE = cleanBase;
 
 const client = axios.create({
   baseURL: API_BASE,
